@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Aether Bridge</title>
+    <style>
+        :root { --glow: #00ff41; --bg: #0a0a0a; --panel: #111; }
+        body { background: var(--bg); color: var(--glow); font-family: 'Courier New', monospace; padding: 20px; max-width: 900px; margin: auto; }
+        .panel { border: 1px solid var(--glow); padding: 20px; margin-bottom: 20px; background: var(--panel); box-shadow: 0 0 10px rgba(0,255,65,0.1); }
+        .drop-zone { border: 2px dashed var(--glow); padding: 30px; text-align: center; cursor: pointer; transition: 0.3s; margin-bottom: 10px; }
+        .drop-zone:hover { background: #003311; box-shadow: inset 0 0 20px var(--glow); }
+        textarea { width: 100%; height: 180px; background: #050505; color: var(--glow); border: 1px solid #333; padding: 10px; font-size: 12px; font-family: monospace; box-sizing: border-box; }
+        input[type="password"] { background: #000; border: 1px solid var(--glow); color: var(--glow); padding: 8px; width: 250px; margin-bottom: 10px; }
+        .btn { background: var(--glow); color: #000; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; margin-top: 10px; text-transform: uppercase; }
+        .btn:hover { background: #fff; box-shadow: 0 0 15px #fff; }
+        .status { margin: 10px 0; font-size: 0.85em; color: #888; border-left: 3px solid var(--glow); padding-left: 10px; min-height: 1.2em; }
+        h2 { border-bottom: 1px solid var(--glow); padding-bottom: 5px; color: #fff; text-shadow: 0 0 8px var(--glow); margin-top: 0; }
+        .label { font-size: 0.75em; color: var(--glow); margin-bottom: 8px; letter-spacing: 1px; }
+        #drop-decode { border-color: #0088ff; color: #0088ff; }
+        #drop-decode:hover { background: #001133; box-shadow: inset 0 0 20px #0088ff; }
+    </style>
+</head>
+<body>
+
+    <h2>[ THE AETHER BRIDGE ]</h2>
+    <div class="label" style="margin-bottom:20px;">Secure File-to-Text Smuggling Portal // No Server // Zero-Knowledge</div>
+
+    <div class="panel">
+        <div class="label">Vault Configuration</div>
+        Password (Optional): <input type="password" id="pass-key" placeholder="Leave blank for clear-text">
+    </div>
+
+    <div class="panel">
+        <div class="label">Step 1: Outbound (File -> Text)</div>
+        <div id="drop-encode" class="drop-zone">DROP SOURCE FILE TO STRINGIFY</div>
+        <input type="file" id="input-encode" style="display:none">
+        <div id="status-out" class="status">SYSTEM READY.</div>
+    </div>
+
+    <div class="panel">
+        <div class="label">The Bridge (Manual Text Interface)</div>
+        <textarea id="io-box" placeholder="---BEGIN WIZARD DATA---"></textarea>
+        <button id="btn-recon" class="btn">RECONSTRUCT FROM BOX</button>
+        <button id="btn-clear" class="btn" style="background:#444; color:#fff;">CLEAR INTERFACE</button>
+    </div>
+
+    <div class="panel">
+        <div class="label">Step 2: Inbound (Text-File -> Original)</div>
+        <div id="drop-decode" class="drop-zone">DROP .TXT SPELL-FILE TO RECOVER</div>
+        <input type="file" id="input-decode" style="display:none">
+        <div id="status-in" class="status">AWAITING TRANSMISSION...</div>
+    </div>
+
+    <script>
+	// this was all coded by Gemini! 	
+
+        const ioBox = document.getElementById('io-box');
+        const passKey = document.getElementById('pass-key');
+        const statusOut = document.getElementById('status-out');
+        const statusIn = document.getElementById('status-in');
+
+        // --- CRYPTO ENGINE ---
+        async function getDerivedKey(password) {
+            const enc = new TextEncoder();
+            const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]);
+            return crypto.subtle.deriveKey(
+                { name: "PBKDF2", salt: enc.encode("aether-salt-2026"), iterations: 100000, hash: "SHA-256" },
+                keyMaterial, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]
+            );
+        }
+
+        // --- CORE RECONSTRUCTION LOGIC ---
+        async function reconstruct(rawText) {
+            let data = rawText.trim();
+            let password = passKey.value;
+            let filename = "recovered_file";
+            
+            const nameMatch = data.match(/Filename: (.*)\n/);
+            if (nameMatch) filename = nameMatch[1].trim();
+
+            let cleanB64 = data.replace(/---BEGIN WIZARD DATA---/g, "").replace(/---END WIZARD DATA---/g, "").replace(/Filename: .*\n/g, "").replace(/\s/g, "");
+
+            try {
+                const binaryStr = atob(cleanB64.split(',')[1] || cleanB64);
+                const bytes = new Uint8Array(binaryStr.length);
+                for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+
+                let finalBlob;
+                if (password) {
+                    const iv = bytes.slice(0, 12);
+                    const ciphertext = bytes.slice(12);
+                    const key = await getDerivedKey(password);
+                    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, key, ciphertext);
+                    finalBlob = new Blob([decrypted]);
+                } else {
+                    const mime = data.match(/data:(.*?);/)?.[1] || "application/octet-stream";
+                    finalBlob = new Blob([bytes], { type: mime });
+                }
+
+                const url = URL.createObjectURL(finalBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                a.click();
+                return true;
+            } catch (e) {
+                alert("DECRYPTION FAILED: Check your password or data integrity.");
+                return false;
+            }
+        }
+
+        // --- ENCODE (File -> Text) ---
+        async function handleEncode(file) {
+            if (!file) return;
+            statusOut.innerText = "PROCESSING...";
+            const password = passKey.value;
+            const reader = new FileReader();
+
+            reader.onload = async (e) => {
+                let resultData;
+                if (password) {
+                    const key = await getDerivedKey(password);
+                    const iv = crypto.getRandomValues(new Uint8Array(12));
+                    const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, e.target.result);
+                    
+                    const combined = new Uint8Array(iv.length + encrypted.byteLength);
+                    combined.set(iv);
+                    combined.set(new Uint8Array(encrypted), iv.length);
+
+                    // FIXED: Efficiently convert Uint8Array to Base64 without stack overflow
+                    let binary = '';
+                    const len = combined.byteLength;
+                    for (let i = 0; i < len; i++) {
+                        binary += String.fromCharCode(combined[i]);
+                    }
+                    resultData = "data:application/octet-stream;base64," + btoa(binary);
+                } else {
+                    resultData = e.target.result;
+                }
+
+                const final = `---BEGIN WIZARD DATA---\nFilename: ${file.name}\n${resultData}\n---END WIZARD DATA---`;
+                if (final.length < 153600) {
+                    ioBox.value = final;
+                    statusOut.innerText = "DONE: COPIED TO BOX.";
+                } else {
+                    const blob = new Blob([final], {type: "text/plain"});
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = file.name + ".txt";
+                    a.click();
+                    statusOut.innerText = "DONE: DOWNLOADED .TXT.";
+                }
+            };
+            if (password) reader.readAsArrayBuffer(file);
+            else reader.readAsDataURL(file);
+        }
+
+        // --- INTERFACE BINDINGS ---
+        const setupDrop = (id, handler) => {
+            const el = document.getElementById(id);
+            el.onclick = () => el.nextElementSibling.click();
+            el.nextElementSibling.onchange = e => handler(e.target.files[0]);
+            el.ondragover = e => { e.preventDefault(); el.style.boxShadow = "0 0 20px " + (id === 'drop-encode' ? '#00ff41' : '#0088ff'); };
+            el.ondragleave = () => el.style.boxShadow = "none";
+            el.ondrop = e => { e.preventDefault(); el.style.boxShadow = "none"; handler(e.dataTransfer.files[0]); };
+        };
+
+        setupDrop('drop-encode', handleEncode);
+        setupDrop('drop-decode', file => {
+            const reader = new FileReader();
+            reader.onload = e => reconstruct(e.target.result) ? statusIn.innerText = "RECOVERED." : statusIn.innerText = "ERROR.";
+            reader.readAsText(file);
+        });
+
+        document.getElementById('btn-recon').onclick = () => reconstruct(ioBox.value);
+        document.getElementById('btn-clear').onclick = () => { ioBox.value = ""; statusIn.innerText = "AWAITING..."; statusOut.innerText = "READY."; };
+    </script>
+</body>
+</html>
