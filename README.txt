@@ -8,3 +8,5 @@ encryption-or-convert-to-text thing.
 Vibe coded, 
 Gemini did all the coding for this,
 I only came up with the idea. 
+
+https://qcpolmer.github.io/The-Aether-Bridge/
